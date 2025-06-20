@@ -1,7 +1,7 @@
 import boto3
 import pandas as pd
 from snowflake.sqlalchemy import URL
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 import json
 
 
@@ -43,32 +43,18 @@ def upload_file_to_snowflake(file, target_table, schema, tenant):
     df.to_csv(f'/tmp/{target_table}.csv', index=False, header=False)
     secret_json = get_dw_secrets()
     snowflake_eng, snowflake_con = get_snowflake_df_con(secret_json, schema, tenant)
-    snowflake_con.execute(f'DROP TABLE IF EXISTS {target_table}')
+    snowflake_con.execute(text(f'DROP TABLE IF EXISTS {target_table}'))
     snf_sql = f"""
             CREATE TABLE IF NOT EXISTS {target_table} (
-                report_id integer,
-                report_name string,
-                report_week_beg_dt string,
-                report_dt string,
-                user_id integer,
-                l5d_withdrawal_usd_amt string,
-                p5d_balance_usd_amt string,
-                turn_to_negative_balance_usd_amt string,
-                stop_out_hours_cnt string,
-                stop_out_trade_cnt string,
-                elder_has_trades_flag string,
-                claimed_annual_income_usd_amd  string,
-                claimed_saving_usd_amt string,
-                ytd_net_deposit_usd_amt string,
-                lifetime_net_deposit_usd_amt string,
-                l3_month_inactive_flag string,
-                l6_month_inactive_flag string
+                ticket integer,
+                login integer
             )
             STAGE_FILE_FORMAT = ( TYPE = 'csv' FIELD_DELIMITER = ',' FIELD_OPTIONALLY_ENCLOSED_BY = '"' EMPTY_FIELD_AS_NULL = FALSE);
         """
-    snowflake_con.execute(snf_sql)
-    snowflake_con.execute(f"PUT file:///tmp/{target_table}.csv @%{target_table}")
-    snowflake_con.execute(f"COPY INTO {target_table} from @%{target_table}")
+    snowflake_con.execute(text(snf_sql))
+    snowflake_con.execute(text(f"PUT file:///tmp/{target_table}.csv @%{target_table}"))
+    snowflake_con.execute(text(f"COPY INTO {target_table} from @%{target_table}"))
+    snowflake_con.execute(text(f'commit'))
     snf_sql = f"""
             SELECT
             *
@@ -76,14 +62,17 @@ def upload_file_to_snowflake(file, target_table, schema, tenant):
             limit 10
             ;
             """
+    print(snf_sql)
     snf_df = pd.read_sql_query(snf_sql, snowflake_con)
+    snowflake_con.close()
+    snowflake_eng.dispose()
     return snf_df
 
 
 if __name__ == '__main__':
-    file = '/Users/tom.zhang/Desktop/asic_compliance.csv'
-    schema = 'tmgm_dev_iad_2159_tst'
+    file = '/Users/tom.zhang/Downloads/snowflake_upload.csv'
+    schema = 'tmgm_dev_iad_2940_lnd'
     tenant = 'TMGM'
-    target_table = 'compliance_triggers_delta'
+    target_table = 'crm_transaction_adj'
     df = upload_file_to_snowflake(file, target_table, schema, tenant)
     print(df.head(10))
