@@ -46,8 +46,10 @@ def upload_file_to_snowflake(file, target_table, schema, tenant):
     snowflake_con.execute(text(f'DROP TABLE IF EXISTS {target_table}'))
     snf_sql = f"""
             CREATE TABLE IF NOT EXISTS {target_table} (
-                ticket integer,
-                login integer
+                trading_server_transaction_no integer,
+                trading_server_login integer,
+                comment string,
+                fund_amount decimal(38,6)
             )
             STAGE_FILE_FORMAT = ( TYPE = 'csv' FIELD_DELIMITER = ',' FIELD_OPTIONALLY_ENCLOSED_BY = '"' EMPTY_FIELD_AS_NULL = FALSE);
         """
@@ -73,6 +75,6 @@ if __name__ == '__main__':
     file = '/Users/tom.zhang/Downloads/snowflake_upload.csv'
     schema = 'tmgm_dev_iad_2940_lnd'
     tenant = 'TMGM'
-    target_table = 'crm_transaction_adj'
+    target_table = 'crm_transaction_adj_20250812'
     df = upload_file_to_snowflake(file, target_table, schema, tenant)
     print(df.head(10))
