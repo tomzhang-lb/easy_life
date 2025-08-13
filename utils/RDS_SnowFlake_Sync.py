@@ -201,6 +201,6 @@ if __name__ == '__main__':
     print('Source data ...')
     print(result_df.head(10))
 
-    snf_df = save_df_to_snowflake(result_df, schema, target_table)
-    print('Target data ...')
-    print(snf_df)
+    # snf_df = save_df_to_snowflake(result_df, schema, target_table)
+    # print('Target data ...')
+    # print(snf_df)
