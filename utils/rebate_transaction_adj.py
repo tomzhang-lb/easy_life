@@ -139,23 +139,24 @@ def save_df_to_snowflake(df, schema, target_table, tenant, table_ddl):
         raise e
 
 
-def read_adj_trx(adj_file):
+def read_adj_trx(adj_file, sheet):
     if Path(adj_file).exists():
-        source_df = pd.read_excel(adj_file)
+        source_df = pd.read_excel(adj_file, sheet_name=sheet)
         return source_df
     else:
         print(f'File {adj_file} does not exist')
         raise FileNotFoundError
 
 
-def gen_adj_ddl(adj_file, schema, target_table):
-    source_df = read_adj_trx(adj_file)
+def gen_adj_ddl(adj_file, sheet, schema, target_table):
+    source_df = read_adj_trx(adj_file, sheet=sheet)
     adj_table_ddl = f'CREATE TABLE IF NOT EXISTS {schema}.{target_table} ( '
     adj_table_columns = source_df.columns
     for column in adj_table_columns:
         adj_table_ddl = adj_table_ddl + f'{column} string,'
     adj_table_ddl = re.sub(r',$', '', adj_table_ddl)
     adj_table_ddl = adj_table_ddl + ''') STAGE_FILE_FORMAT = ( TYPE = 'csv' FIELD_DELIMITER = ',' FIELD_OPTIONALLY_ENCLOSED_BY = '"' EMPTY_FIELD_AS_NULL = FALSE)'''
+    print(adj_table_ddl)
     return adj_table_ddl
 
 
@@ -174,84 +175,88 @@ def query_snowflake(schema, tenant, snf_sql):
 
 
 if __name__ == '__main__':
-    adj_file = '/Users/tom.zhang/Downloads/adj_rebate_transaction.xlsx'
+    adj_file = '/Users/tom.zhang/Downloads/adj_transactions_20250814.xlsx'
+    adj_file_sheet = 'Transactions'
     schema = 'tmgm_dev_iad_tom_lnd'
     tenant = 'tmgm'
-    adj_table = 'adj_transaction_20250812'
+    adj_table = 'adj_transaction_20250814'
     rs_secret_name = 'AWS_tm-prod-mysql-db01-secret-read-replica'
     rs_db = 'mt5_tmgm_live01'
     rs_source_table_prefix = 'mt5_deals_'
-    rs_target_table = 'rs_transaction_adj_20250812'
-    crm_target_table = 'crm_transaction_adj_20250812'
+    rs_target_table = 'rs_transaction_adj_20250814'
+    crm_target_table = 'crm_transaction_adj_20250814'
     crm_db = 'tm_portal'
 
     # 1.) save adj file to Snowflake
-    # adj_df = read_adj_trx(adj_file)
-    # adj_table_ddl = gen_adj_ddl(adj_file, schema, adj_table)
-    # tmp_df = save_df_to_snowflake(adj_df, schema, adj_table, tenant, adj_table_ddl)
-    # print(tmp_df.head())
-    #
-    #
-    # # 2.) query CRM data and save to Snowflake based on adj file
-    # snf_sql = f"""
-    #             SELECT
-    #                 trx.id
-    #             FROM {schema}.{adj_table} adj
-    #             INNER JOIN lnd.crm_transactions trx
-    #             ON adj.trading_server_transaction_no = trx.ticket
-    #             AND CAST(adj.trading_server_login AS VARCHAR) = trx.external_id
-    #             """
-    # snf_df = query_snowflake(schema, tenant, snf_sql)
-    # # print(snf_df)
-    #
-    # crm_sql = f'''
-    #          select
-    #             id
-    #             ,ticket
-    #             ,"no"
-    #             ,user_id
-    #             ,external_id
-    #             ,processed_at
-    #             ,completed_at
-    #             ,created_at
-    #             ,updated_at
-    #         from {crm_db}.transactions
-    #         where id in ('''
-    # crm_sql = crm_sql + ','.join(map(str, snf_df['id'].tolist())) + ')'
-    # # print(crm_sql)
-    #
-    # crm_df = get_rds_df(rs_secret_name, crm_db, crm_sql)
-    # print(crm_df)
-    # crm_target_table_ddl = f'''
-    #                         CREATE TABLE IF NOT EXISTS {schema}.{crm_target_table} (
-    #                         ID NUMBER(38,0),
-    #                         TICKET NUMBER(38,0),
-    #                         "no" VARCHAR(16777216),
-    #                         USER_ID NUMBER(38,0),
-    #                         EXTERNAL_ID VARCHAR(16777216),
-    #                         PROCESSED_AT TIMESTAMP_NTZ(9),
-    #                         COMPLETED_AT TIMESTAMP_NTZ(9),
-    #                         CREATED_AT TIMESTAMP_NTZ(9),
-    #                         UPDATED_AT TIMESTAMP_NTZ(9)
-    #                         )
-    #                         '''
-    # tmp_df = save_df_to_snowflake(crm_df, schema, crm_target_table, tenant, crm_target_table_ddl)
-    # print(tmp_df.head())
+    adj_df = read_adj_trx(adj_file, adj_file_sheet)
+    adj_table_ddl = gen_adj_ddl(adj_file, adj_file_sheet, schema, adj_table)
+    tmp_df = save_df_to_snowflake(adj_df, schema, adj_table, tenant, adj_table_ddl)
+    print(tmp_df.head())
+
+
+    # 2.) query CRM data and save to Snowflake based on adj file
+    snf_sql = f"""
+                SELECT
+                    trx.id
+                FROM {schema}.{adj_table} adj
+                INNER JOIN lnd.crm_transactions trx
+                ON adj.crm_transaction_no = trx."NO"
+                AND cast(adj.login as varchar) = trx.external_id
+                GROUP BY 1
+                """
+    snf_df = query_snowflake(schema, tenant, snf_sql)
+    # print(snf_df)
+
+    crm_sql = f'''
+             select
+                id
+                ,ticket
+                ,"no" AS crm_ticket
+                ,user_id
+                ,external_id
+                ,processed_at
+                ,completed_at
+                ,created_at
+                ,updated_at
+            from {crm_db}.transactions
+            where id in ('''
+    crm_sql = crm_sql + ','.join(map(str, snf_df['id'].tolist())) + ')'
+    # print(crm_sql)
+
+    crm_df = get_rds_df(rs_secret_name, crm_db, crm_sql)
+    print(crm_df.head())
+    crm_target_table_ddl = f'''
+                            CREATE TABLE IF NOT EXISTS {schema}.{crm_target_table} (
+                            ID NUMBER(38,0),
+                            TICKET NUMBER(38,0),
+                            "no" VARCHAR(16777216),
+                            USER_ID NUMBER(38,0),
+                            EXTERNAL_ID VARCHAR(16777216),
+                            PROCESSED_AT TIMESTAMP_NTZ(9),
+                            COMPLETED_AT TIMESTAMP_NTZ(9),
+                            CREATED_AT TIMESTAMP_NTZ(9),
+                            UPDATED_AT TIMESTAMP_NTZ(9)
+                            )
+                            '''
+    tmp_df = save_df_to_snowflake(crm_df, schema, crm_target_table, tenant, crm_target_table_ddl)
+    print(tmp_df.head())
 
     # 3.) query report server data and save to Snowflake based on adj file
     snf_sql = f"""
                 SELECT
-                    adj.trading_server_transaction_no
-                    ,adj.trading_server_login
+                    crm_adj.ticket
+                    ,crm_adj.external_id
                     ,trx.server
-                    ,EXTRACT('year', crm_trx.created_at) AS year_num
-                FROM {schema}.{adj_table} adj
+                    ,EXTRACT('year', crm_adj.created_at) AS year_num
+                FROM {schema}.{crm_target_table} crm_adj
                 INNER JOIN lnd.report_server_trades_transactions trx
-                ON adj.trading_server_transaction_no = trx.ticket
-                AND adj.trading_server_login = trx.login
+                ON crm_adj.ticket = trx.ticket
+                AND crm_adj.external_id = cast(trx.login as varchar)
+                /*
                 INNER JOIN {schema}.{crm_target_table} crm_trx
                 ON adj.trading_server_transaction_no = crm_trx.ticket
                 AND CAST(adj.trading_server_login AS VARCHAR) = crm_trx.external_id
+                */
                 """
     snf_df = query_snowflake(schema, tenant, snf_sql)
     # snf_df['server'] = np.where(snf_df["trading_server_transaction_no"] == '68541921', 'mt5_tmgm_demo', snf_df["server"])
@@ -262,6 +267,7 @@ if __name__ == '__main__':
     for server_year, group_df in snf_df.groupby(['server', 'year_num']):
         server = server_year[0]
         year = server_year[1]
+        print(server_year)
         rs_sql = f'''
                     select
                         deal
@@ -272,14 +278,14 @@ if __name__ == '__main__':
                     from {server}.{rs_source_table_prefix}{year}
                     where
                     ('''
-        group_df['deal_login'] = '(deal =' + group_df['trading_server_transaction_no'].astype(str) + ' and login =' + group_df['trading_server_login'].astype(str) + ')'
+        group_df['deal_login'] = '(deal =' + group_df['ticket'].astype(str) + ' and login =' + group_df['external_id'].astype(str) + ')'
         rs_sql = rs_sql + ' or '.join(map(str, group_df['deal_login'].tolist())) + ')'
         print(rs_sql)
 
         rs_df = get_rds_df(rs_secret_name, rs_db, rs_sql, crm_flag=0)
         rs_combine_df = pd.concat([rs_combine_df, rs_df], ignore_index=True)
 
-    print(rs_combine_df)
+    print(rs_combine_df.shape)
 
     rs_target_table_ddl = f'''
                              CREATE TABLE IF NOT EXISTS {schema}.{rs_target_table} (
@@ -292,5 +298,10 @@ if __name__ == '__main__':
                             '''
     tmp_df = save_df_to_snowflake(rs_combine_df, schema, rs_target_table, tenant, rs_target_table_ddl)
     print(tmp_df.head())
+
+    # manually execute
+    '''
+    refer to https://thebidgroup.atlassian.net/wiki/spaces/~712020d525caf69013417a8701f3e2e0e7ce9d/pages/3874685318/How+to+adjust+Mars+Transaction+Report+as+of+IB+rebate+transaction+date+change
+    '''
 
     print('ALL DONE!')
