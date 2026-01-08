@@ -39,7 +39,7 @@ def get_snowflake_df_con(secret_json, schema, tenant):
 
 def upload_file_to_snowflake(file, schema, tenant):
     df = pd.read_csv(f'{file}', sep=',', header=0, index_col=False)
-    data_df = df.iloc[1:]
+    # take the file name as the target table name , and first column as the column name with data type as string
     target_table = file.split('/')[-1].split('.')[0]
     table_columns_type = ' string, '.join(df.columns.values) + ' string'
     snf_sql = f"""
@@ -49,11 +49,11 @@ def upload_file_to_snowflake(file, schema, tenant):
             STAGE_FILE_FORMAT = ( TYPE = 'csv' FIELD_DELIMITER = ',' FIELD_OPTIONALLY_ENCLOSED_BY = '"' EMPTY_FIELD_AS_NULL = FALSE);
         """
     print(snf_sql)
-    data_df.to_csv(f'/tmp/{target_table}.csv', index=False, header=False)
+    # save data and upload to snowflake
+    df.to_csv(f'/tmp/{target_table}.csv', index=False, header=False)
     secret_json = get_dw_secrets()
     snowflake_eng, snowflake_con = get_snowflake_df_con(secret_json, schema, tenant)
     snowflake_con.execute(text(f'DROP TABLE IF EXISTS {target_table}'))
-
     snowflake_con.execute(text(snf_sql))
     snowflake_con.execute(text(f"PUT file:///tmp/{target_table}.csv @%{target_table}"))
     snowflake_con.execute(text(f"COPY INTO {target_table} from @%{target_table}"))
