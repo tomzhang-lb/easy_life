@@ -5,9 +5,14 @@ from sqlalchemy import create_engine, text
 import json
 
 
-def get_dw_secrets():
+
+
+# s3 = session.client("s3")
+
+
+def get_dw_secrets(session):
     secret_name = "data_dw_sysuser"
-    session = boto3.session.Session()
+    # session = boto3.session.Session()
     region = session.region_name
     # region = os.environ['REGION_NAME']
     # print(region)
@@ -37,7 +42,7 @@ def get_snowflake_df_con(secret_json, schema, tenant):
     return engine, engine.connect()
 
 
-def upload_file_to_snowflake(file, schema, tenant):
+def upload_file_to_snowflake(session, file, schema, tenant):
     df = pd.read_csv(f'{file}', sep=',', header=0, index_col=False)
     # take the file name as the target table name , and first column as the column name with data type as string
     target_table = file.split('/')[-1].split('.')[0]
@@ -51,7 +56,7 @@ def upload_file_to_snowflake(file, schema, tenant):
     print(snf_sql)
     # save data and upload to snowflake
     df.to_csv(f'/tmp/{target_table}.csv', index=False, header=False)
-    secret_json = get_dw_secrets()
+    secret_json = get_dw_secrets(session)
     snowflake_eng, snowflake_con = get_snowflake_df_con(secret_json, schema, tenant)
     snowflake_con.execute(text(f'DROP TABLE IF EXISTS {target_table}'))
     snowflake_con.execute(text(snf_sql))
@@ -73,8 +78,11 @@ def upload_file_to_snowflake(file, schema, tenant):
 
 
 if __name__ == '__main__':
-    file = '/Users/tom.zhang/Downloads/oqtima_group_mapping_v2.csv'
-    schema = 'oqti_dev_iad_2928_lnd'
-    tenant = 'OQTI'
-    result_df = upload_file_to_snowflake(file, schema, tenant)
+    file = '/Users/tom.zhang/Downloads/email_verify.csv'
+    schema = 'tmgm_dev_iad_tom_lnd'
+    tenant = 'TMGM'
+    session = boto3.Session(profile_name="DataEngineer-859004686855")
+    # sts = session.client("sts")
+    # sts.get_caller_identity()
+    result_df = upload_file_to_snowflake(session, file, schema, tenant)
     print(result_df.head())
