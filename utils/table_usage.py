@@ -1,6 +1,10 @@
 import configparser
+import csv
 import os
+from collections import defaultdict
 from pathlib import Path
+
+import pandas as pd
 from git import Repo
 from github import Github
 
@@ -84,9 +88,9 @@ def git_download(github_token, git_repo, local_path):
 def try_utf8(file):
     "Returns a Unicode object on success, or None on failure"
     try:
-       return open(file, encoding='UTF-8').read()
+        return open(file, encoding='UTF-8').read()
     except UnicodeDecodeError:
-       return None
+        return None
 
 
 def table_usage(table_name, location):
@@ -99,8 +103,7 @@ def table_usage(table_name, location):
             with open(file, encoding='utf-8') as f:
                 if table_name in f.read().lower():
                     print(file)
-                    result_file_list.append(file)
-
+                    result_file_list.append(str(file).replace('/Users/tom.zhang/Github/', ''))
     return result_file_list
 
 
@@ -114,23 +117,55 @@ def table_column_usage(table_name, column_names, location):
             with open(file, encoding='utf-8') as f:
                 file_content = f.read().lower()
                 if table_name.lower() in file_content and any(x.lower() in file_content for x in column_names):
-                    # print(file)
-                    result_file_list.append(file)
+                    print(file)
+                    result_file_list.append(str(file))
     return result_file_list
 
 
+def get_delete_table_list(file):
+    table_df = pd.read_csv(file)
+    table_df.columns = table_df.columns.str.lower()
+    delete_table_list = table_df.query("delete == 'Yes'")['table_name'].apply(lambda x: x.lower()).unique().tolist()
+    # print(delete_table_list)
+    return delete_table_list
+
+
+def save_result_to_csv(result_file_list, result_list):
+    if os.path.exists(result_file_list):
+        os.remove(result_file_list)
+
+    with open(result_file_list, "w", newline="") as f:
+        writer = csv.writer(f)
+        for key, values in result_list.items():
+            for value in values:
+                writer.writerow([key, value])
+
+
 if __name__ == '__main__':
-    token_config_file = 'github_config.ini'
-    git_repo = 'lifebyte-systems/lb-data-mars-ui'
-    git_repo_name = git_repo.split('/')[1]
+    token_config_file = '/Users/tom.zhang/Github/easy_life/usage/github_config.ini'
+    git_repo_list = ['/Users/tom.zhang/Github/orchestrator', '/Users/tom.zhang/Github/lb-data-mars-ui']
+    broker_list = ['TMGM', 'DLSM', 'ANZO', 'TTG', 'OQTI']
+    home_dir = '/Users/tom.zhang/Downloads/'
+    # dlsm_table_file = '/Users/tom.zhang/Downloads/DLSM_LND_TST_SUMMARY_with_delete_flag.csv'
+    # dlsm_reulst_file = '/Users/tom.zhang/Downloads/DLSM_LND_TST_SUMMARY_with_delete_flag_result.csv'
+    # git_repo_name = git_repo.split('/')[1]
     github_token, github_path = get_github_token(token_config_file)
-    git_download(github_token, git_repo, github_path)
+    # git_download(github_token, git_repo, github_path)
 
-    # search
-    table_name = 'report_server_trades_closed'
-    column_names = ['usd_pnl_c', 'usd_pnl_d']
-    result_file_list = table_column_usage(table_name, column_names, f'{github_path}/{git_repo_name}')
-    print(f'Result files are:')
-    for result_file in result_file_list:
-        print(result_file)
 
+    for broker in broker_list:
+        result_dict = defaultdict(list)
+        table_file = home_dir +'/' + broker + '_LND_TST_SUMMARY_with_delete_flag.csv'
+        result_file = home_dir +'/' + broker + '_LND_TST_SUMMARY_with_delete_flag_result.csv'
+        table_name_list = get_delete_table_list(table_file)
+        # table_name_list = ['rebate_ledger_v2', 'accounting_t_1_equity_report']
+        # # column_names = ['usd_pnl_c', 'usd_pnl_d']
+        # # result_file_list = table_column_usage(table_name, column_names, f'{github_path}/{git_repo_name}')
+        for table_name in table_name_list:
+            for git_repo in git_repo_list:
+                result_file_list = table_usage(table_name, git_repo)
+                result_dict[table_name].extend(result_file_list)
+        print(f'Result files are:')
+        print(result_dict)
+        save_result_to_csv(result_file, result_dict)
+        # result_dict.clear()
