@@ -39,7 +39,7 @@ def create_procedure(tenant, schema, snowflake_cur):
                 CREATE OR REPLACE PROCEDURE {tenant}_DATAWAREHOUSE.{schema}.DROP_OLD_SCHEMAS
                 (
                     days_threshold FLOAT,
-                    keyword VARCHAR,
+                    keyword ARRAY,
                     dry_run BOOLEAN DEFAULT TRUE
                 )
                 RETURNS VARCHAR
@@ -55,7 +55,8 @@ def create_procedure(tenant, schema, snowflake_cur):
                     var droppedCount = 0; 
                     var errors = [];
                     var dropQuery = '';
-                    var schema_exclusion = ['%1477%', '%6915%', '%6917%', '%1650%'].map(x => `'${{x}}'`).join(", ");
+                    var schema_exclusion = ['%1477%', '%6915%', '%6917%', '%1650%', 'fw_'].map(x => `'${{x}}'`).join(", ");
+                    var schema_keywords = keyword.map(x => `lower('%${{x}}%')`).join(", ");
                 
                     /* 
                      * get all the schema needs to be drop, 
@@ -69,11 +70,11 @@ def create_procedure(tenant, schema, snowflake_cur):
                             created,
                             DATEDIFF('day', created, CURRENT_TIMESTAMP()) AS days_old
                         FROM information_schema.schemata
-                        WHERE (LOWER(schema_name) like LOWER('%${{keyword}}%') )
+                        WHERE LOWER(schema_name) LIKE ANY (${{schema_keywords}})
                             AND REGEXP_LIKE(schema_name, '\\\\\\\\w+\\\\\\\\d[0-9]{{3,}}\\\\\\\\w+')
                             AND NOT (schema_name like any (${{schema_exclusion}}))
                             AND DATEDIFF('day', created, CURRENT_TIMESTAMP()) > ${{days}}
-                        ORDER BY days_old DESC
+                        ORDER BY schema_name
                     `;
                     
                     var stmt = snowflake.createStatement({{sqlText: findQuery}});
@@ -129,9 +130,9 @@ def create_procedure(tenant, schema, snowflake_cur):
         print(e)
 
 
-def call_procedure(tenant, schema, snowflake_cur, retention_days=365, schema_keyword='IAD_DEV', dry_run='FALSE' ) -> list:
+def call_procedure(tenant, schema, snowflake_cur, retention_days=365, schema_keyword=['IAD_DEV',], dry_run='FALSE' ) -> list:
     call_procedure = f"""
-        call {tenant}_DATAWAREHOUSE.{schema}.DROP_OLD_SCHEMAS({retention_days}, '{schema_keyword}', {dry_run})
+        call {tenant}_DATAWAREHOUSE.{schema}.DROP_OLD_SCHEMAS({retention_days}, {schema_keyword}, {dry_run})
         ;
     """
     # print(call_procedure)
@@ -173,10 +174,10 @@ def lambda_handler(event, context):
 
 if __name__ == '__main__':
     event = {
-        "client": "ANZO",
+        "client": "TMGM",
         "schema": "DQRC",
-        "retention_days": 365,
-        "schema_keyword": "DEV_IAD",
+        "retention_days": 90,
+        "schema_keyword": ["DEV_IAD", "UAT_IAD"],
         "dry_run": "False"
     }
     lambda_handler(event, None)
