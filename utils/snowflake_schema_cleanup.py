@@ -71,7 +71,7 @@ def create_procedure(tenant, schema, snowflake_cur):
                             DATEDIFF('day', created, CURRENT_TIMESTAMP()) AS days_old
                         FROM information_schema.schemata
                         WHERE LOWER(schema_name) LIKE ANY (${{schema_keywords}})
-                            AND REGEXP_LIKE(schema_name, '\\\\\\\\w+\\\\\\\\d[0-9]{{3,}}\\\\\\\\w+')
+                            AND REGEXP_LIKE(schema_name, '\\\\\\\\w+\\\\\\\\d{{3,}}\\\\\\\\w+')
                             AND NOT (schema_name like any (${{schema_exclusion}}))
                             AND DATEDIFF('day', created, CURRENT_TIMESTAMP()) > ${{days}}
                         ORDER BY schema_name
@@ -177,7 +177,7 @@ if __name__ == '__main__':
         "client": "TMGM",
         "schema": "DQRC",
         "retention_days": 90,
-        "schema_keyword": ["DEV_IAD", "UAT_IAD"],
+        "schema_keyword": ["DEV_IAD", "UAT_IAD", "DEV_DATA"],
         "dry_run": "False"
     }
     lambda_handler(event, None)
